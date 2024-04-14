@@ -1,0 +1,7 @@
+.Polaris-Modal-Dialog__Modal {
+    top: 50%;
+    transform: translate(-50%, -50%);
+    bottom: unset;
+    right: unset;
+    min-height: 200px;
+}

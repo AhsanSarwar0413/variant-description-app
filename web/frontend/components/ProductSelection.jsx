@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     ResourceList,
     Divider,
@@ -13,12 +13,11 @@ import {
     Thumbnail,
     Modal,
     List,
-    Icon
 } from '@shopify/polaris';
-import { ResourcePicker, Provider } from '@shopify/app-bridge-react';
+import { ResourcePicker } from '@shopify/app-bridge-react';
+import { useAuthenticatedFetch } from '../hooks';
 import { AppBridgeProvider } from './providers';
 import DescriptionEditor from './DescriptionEditor';
-import { VaraintDescriptionDB } from '../../mongodbConfiguration';
 
 import '../styles/ProductSelectionOverride.css';
 
@@ -29,6 +28,7 @@ function ProductSelection() {
     const [soldOutVariants, setSoldOutVariants] = useState([]);
     const [soldOutInfo, setSoldOutInfo] = useState(false);
     const [alreadySelected, setAlreadySelected] = useState([]);
+    const authFetch = useAuthenticatedFetch();
 
     const handleSelection = (resources) => {
         const productSelection = [];
@@ -39,7 +39,6 @@ function ProductSelection() {
             productSelection.push({ id: product.id, variants: [] });
             return product.variants.map(variant => {
                 productSelection[productSelection.length - 1].variants.push({ id: variant.id });
-                console.log("Variant Inventory Quantity: ", variant.displayName, variant.inventoryQuantity);
                 if (variant.inventoryQuantity < 1) {
                     soldOutPorductFlag = 1;
                     soldOutVariantsName.push({
@@ -50,12 +49,15 @@ function ProductSelection() {
                 return variant;
             });
         });
+
         setAlreadySelected(productSelection);
         //Flatten Variants Array
         ProductFromResources = ProductFromResources.reduce((acc, val) => acc.concat(val), []);
         setOpenResourcePicker(false);
         if (soldOutPorductFlag === 0) {
-            setShopProducts(ProductFromResources);
+            ProductFromResources = ProductFromResources.map(variant => variant);
+            ProductFromResources = ProductFromResources.filter(variant => !shopProducts.find(item => item.id === variant.id));
+            setShopProducts((shopProducts) => [...shopProducts, ...ProductFromResources]);
         } else {
             setSoldOutInfo(true);
             setSoldOutVariants(soldOutVariantsName);
@@ -75,16 +77,69 @@ function ProductSelection() {
         setOpenResourcePicker(true);
     }
 
-    const deleteItem = (id) => {
-        setShopProducts((shopProducts) => shopProducts.filter((item) => item.id !== id));
-    }
+    const deleteItem = async (id) => {
+        const response = await authFetch('/api/variant/delete', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                variantId: id,
+            }),
+        });
+        if (response.ok) {
+            setShopProducts((shopProducts) => shopProducts.filter((item) => item.id !== id));
+        } else {
+            console.error('Error deleting variant:', response);
+        }
+    };
 
-    const saveDescription = async (id) => {
-        const variantDescription = { id };
-    }
+    useEffect(() => {
+
+        const createScriptTag = async () => {
+
+            const response = await authFetch('/api/shop');
+            const data = await response.json();
+            const test = await authFetch(`/api/get/variantids?shop=${data.data[0].myshopify_domain}&host=${data.data[0].myshopify_domain}`);
+            const testData = await test.json();
+            console.log("test", testData);
+            if (data) {
+                const tagsResponse = await authFetch(`/api/create-script-tag`);
+                const tagsData = await tagsResponse.json();
+                console.log(tagsData);
+            }
+        }
+        const fetchVariants = async () => {
+            try {
+                const response = await authFetch('/api/get/variants');
+                const data = await response.json();
+                if (data !== null) {
+                    const result = {};
+                    const resourcePickerSelection = [];
+                    setShopProducts(data.map(variant => ({
+                        ...variant.variantData,
+                        variantDescription: variant.description,
+                    })));
+                    data.forEach(item => {
+                        const productId = item.variantData.product.id;
+                        if (!result[productId]) {
+                            result[productId] = { id: productId, variants: [] };
+                        }
+                        result[productId].variants.push({ id: item.variantId });
+                    });
+                    resourcePickerSelection.push(...Object.values(result));
+                    setAlreadySelected(resourcePickerSelection);
+                }
+            } catch (error) {
+                console.error('Error fetching variants:', error);
+            }
+        };
+        fetchVariants();
+        createScriptTag();
+    }, []);
 
     //Product Selection Logic
-    const ProductSelectionSection = shopProducts.length === 0 ? (
+    const ProductSelectionSection = Object.keys(shopProducts).length === 0 ? (
         <>
             <Layout.Section>
                 <AlphaCard>
@@ -121,10 +176,10 @@ function ProductSelection() {
                                     return (
                                         <>
                                             <ResourceItem
-                                                id={productID}
+                                                id={id}
                                                 media={variantImage}
                                                 accessibilityLabel={`View details for ${title}`}
-                                                key={productID}
+                                                key={id}
                                             >
                                                 <HorizontalStack blockAlign="center" wrap={false} align="space-between">
                                                     <Text variant="bodyMd" fontWeight="bold" as="h3">
@@ -132,8 +187,8 @@ function ProductSelection() {
                                                     </Text>
                                                     <HorizontalStack gap="4">
                                                         <Button
-                                                            onClick={() => handleCollapse(productID)}
-                                                            primary={showDescription !== productID}
+                                                            onClick={() => handleCollapse(id)}
+                                                            primary={showDescription !== id}
                                                         >
                                                             Show Description
                                                         </Button>
@@ -150,17 +205,14 @@ function ProductSelection() {
                                             <Layout>
                                                 <Layout.Section>
                                                     <Collapsible
-                                                        open={showDescription === productID}
+                                                        open={showDescription === id}
                                                         id="basic-collapsible"
                                                         transition={{ duration: '500ms', timingFunction: 'ease-in-out' }}
                                                         expandOnPrint
                                                     >
                                                         <AlphaCard>
                                                             <VerticalStack gap="10">
-                                                                <DescriptionEditor />
-                                                                <VerticalStack inlineAlign="end">
-                                                                    <Button primary onClick={() => saveDescription(id)}>Save Description</Button>
-                                                                </VerticalStack>
+                                                                <DescriptionEditor variantData={item} />
                                                             </VerticalStack>
                                                         </AlphaCard>
                                                     </Collapsible>

@@ -5,3 +5,7 @@
     right: unset;
     min-height: 200px;
 }
+
+.attachment__progress {
+    display: none;
+}

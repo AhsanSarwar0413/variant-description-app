@@ -1,13 +1,11 @@
-import mongoose from 'mongoose'
+import mongoose from 'mongoose';
 
-mongoose.connect('mongodb+srv://waleed:ahsan123@cluster0.admdmff.mongodb.net/variantDescriptionDB', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-});
+mongoose.connect('mongodb+srv://waleed:ahsan123@cluster0.admdmff.mongodb.net/variantDescriptionDB');
 
 //defining orderStatus Collection
 const VariantDescriptionsSchema = new mongoose.Schema({
-    varaintID: String,
+    variantData: Object,
+    variantId: String,
     description: String,
 });
 
